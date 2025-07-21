@@ -3,10 +3,11 @@ import networkx as nx
 import pandas as pd
 from pulp import *
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
 # 1. Charger les données du graphe
-nodes_df = pd.read_excel('Experiment/nodes.xlsx')
-edges_df = pd.read_excel('Experiment/edges.xlsx')
+nodes_df = pd.read_excel('nodes.xlsx')
+edges_df = pd.read_excel('edges.xlsx')
 
 # 2. Construire le graphe
 G = nx.Graph()
@@ -15,7 +16,7 @@ for _, row in edges_df.iterrows():
     G.add_edge(row['ID_FROM_NODE'], row['ID_TO_NODE'])
 
 # 3. Charger les atténuations
-att_df = pd.read_csv('Experiment/attenuations_bfs.csv')
+att_df = pd.read_csv('attenuations_bfs.csv')
 
 # 4. Calculer les coûts des nœuds à partir des atténuations 
 node_costs = {node: 0 for node in G.nodes()}
@@ -67,7 +68,7 @@ def visualize_graph(graph, node_costs, cover=None, title="MWVC Solution"):
     nx.draw_networkx_labels(graph, pos, labels, font_size=8)
     plt.title(title, fontsize=14, pad=20)
     plt.axis('off')
-    from matplotlib.lines import Line2D
+
     legend_elements = [
         Line2D([0], [0], marker='o', color='w', label='Nœud dans la couverture', markerfacecolor='red', markersize=10),
         Line2D([0], [0], marker='o', color='w', label='Nœud hors couverture', markerfacecolor='skyblue', markersize=10)
