@@ -1,0 +1,8 @@
+numpy
+networkx
+matplotlib
+pulp 
+scipy
+pandas
+openpyxl
+streamlit
