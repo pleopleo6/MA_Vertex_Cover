@@ -209,6 +209,34 @@ def solve_mwvc(graph: nx.Graph, node_costs: Dict) -> Tuple[List, float]:
     return cover, total_cost
 
 
+def local_2_approx_mwvc(graph: nx.Graph, node_costs: Dict) -> List:
+    """Local 2-Approximation heuristic for MWVC.
+
+    Iteratively pick an uncovered edge (u, v), compute cost/degree ratio for u and v
+    w.r.t the set of still-uncovered edges, and add the better node to the cover.
+    """
+    cover: set = set()
+    uncovered_edges: set = set(graph.edges())
+
+    while uncovered_edges:
+        u, v = next(iter(uncovered_edges))
+
+        degree_u = sum(1 for e in uncovered_edges if u in e)
+        degree_v = sum(1 for e in uncovered_edges if v in e)
+
+        ratio_u = (node_costs.get(u, 0.0) / degree_u) if degree_u > 0 else float("inf")
+        ratio_v = (node_costs.get(v, 0.0) / degree_v) if degree_v > 0 else float("inf")
+
+        if ratio_u <= ratio_v:
+            cover.add(u)
+            uncovered_edges = {e for e in uncovered_edges if u not in e}
+        else:
+            cover.add(v)
+            uncovered_edges = {e for e in uncovered_edges if v not in e}
+
+    return list(cover)
+
+
 # -----------------------------
 # Visualization
 # -----------------------------
@@ -293,6 +321,7 @@ else:
     edges_src = edges_up
     zc_gamma_src = zc_up
 
+algorithm = st.selectbox("MWVC algorithm", ["Exact (PuLP)", "Local 2-Approx Heuristic"], index=0)
 run = st.button("Run")
 
 if run:
@@ -321,10 +350,14 @@ if run:
             st.write("Attenuation preview:")
             st.dataframe(att_df.head(20))
 
-            with st.spinner("Solving MWVC (PuLP)…"):
+            with st.spinner(f"Solving MWVC – {algorithm}…"):
                 node_costs_raw = compute_node_costs_from_attenuations(G, attenuations)
                 node_costs = normalize_costs(node_costs_raw)
-                cover, total_cost = solve_mwvc(G, node_costs)
+                if algorithm == "Exact (PuLP)":
+                    cover, total_cost = solve_mwvc(G, node_costs)
+                else:
+                    cover = local_2_approx_mwvc(G, node_costs)
+                    total_cost = float(sum(node_costs[n] for n in cover))
 
             st.subheader("MWVC Results")
             colA, colB = st.columns(2)
