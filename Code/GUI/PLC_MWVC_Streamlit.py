@@ -8,6 +8,11 @@ import pandas as pd
 import networkx as nx
 import streamlit as st
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import tempfile
+from pyvis.network import Network
+import streamlit.components.v1 as components
+import json
 
 
 # -----------------------------
@@ -262,6 +267,173 @@ def draw_graph_matplotlib(graph: nx.Graph, cover: List, node_costs: Dict) -> plt
     return fig
 
 
+def draw_graph_plotly(graph: nx.Graph, cover: List, node_costs: Dict) -> go.Figure:
+    pos = nx.spring_layout(graph, seed=42)
+    covered_set = set(cover)
+
+    edge_x: List[float] = []
+    edge_y: List[float] = []
+    for u, v in graph.edges():
+        x0, y0 = pos[u]
+        x1, y1 = pos[v]
+        edge_x.extend([x0, x1, None])
+        edge_y.extend([y0, y1, None])
+
+    edge_trace = go.Scatter(
+        x=edge_x,
+        y=edge_y,
+        line=dict(width=1, color="rgba(100,100,100,0.5)"),
+        hoverinfo="none",
+        mode="lines",
+        name="edges",
+    )
+
+    node_x: List[float] = []
+    node_y: List[float] = []
+    node_color: List[str] = []
+    node_size: List[float] = []
+    node_text: List[str] = []
+
+    for n in graph.nodes():
+        x, y = pos[n]
+        node_x.append(x)
+        node_y.append(y)
+        node_color.append("red" if n in covered_set else "#6ab7ff")
+        # Scale sizes to a reasonable Plotly marker scale
+        node_size.append(10 + 6 * float(node_costs.get(n, 1.0)))
+        node_text.append(f"Node: {n}<br>Cost: {float(node_costs.get(n, 0.0)):.2f}<br>Covered: {'Yes' if n in covered_set else 'No'}")
+
+    node_trace = go.Scatter(
+        x=node_x,
+        y=node_y,
+        mode="markers",
+        hoverinfo="text",
+        hovertext=node_text,
+        marker=dict(
+            showscale=False,
+            color=node_color,
+            size=node_size,
+            line=dict(width=1, color="#333"),
+            opacity=0.9,
+        ),
+        name="nodes",
+    )
+
+    fig = go.Figure(data=[edge_trace, node_trace])
+    fig.update_layout(
+        showlegend=False,
+        margin=dict(l=10, r=10, t=30, b=10),
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        dragmode="pan",
+    )
+    fig.update_yaxes(scaleanchor="x", scaleratio=1)
+    return fig
+
+
+def draw_graph_pyvis(graph: nx.Graph, cover: List, node_costs: Dict, height_px: int = 700) -> str:
+    covered_set = set(cover)
+
+    # Deterministic initial layout for a clean, stable look
+    pos = nx.spring_layout(graph, seed=42)
+
+    net = Network(height=f"{height_px}px", width="100%", bgcolor="#ffffff", font_color="#1f2937")
+    # Use ForceAtlas2-based physics for organic network look
+    net.barnes_hut(gravity=-20000, central_gravity=0.1, spring_length=220, spring_strength=0.04, damping=0.12)
+
+    # Professional color palette
+    color_covered = "#d62728"   # red
+    color_uncovered = "#1f77b4" # blue
+    border_covered = "#b71c1c"
+    border_uncovered = "#0b3c5d"
+    edge_color = "#B0B7C3"
+
+    for n in graph.nodes():
+        is_cov = n in covered_set
+        degree = graph.degree(n)
+        cost = float(node_costs.get(n, 0.0))
+        color = color_covered if is_cov else color_uncovered
+        border = border_covered if is_cov else border_uncovered
+        border_width = 3 if is_cov else 1.5
+
+        # Size mapping (kept moderate for readability)
+        size = 12 + 2.5 * float(node_costs.get(n, 1.0))
+
+        title = (
+            f"<b>Node</b>: {n}<br>"
+            f"<b>Cost</b>: {cost:.2f}<br>"
+            f"<b>Degree</b>: {degree}<br>"
+            f"<b>Covered</b>: {'Yes' if is_cov else 'No'}"
+        )
+
+        # Initial positions from spring layout for cleaner start
+        x, y = pos[n]
+        net.add_node(
+            str(n),
+            label=str(n) if is_cov else "",
+            title=title,
+            color={"background": color, "border": border},
+            borderWidth=border_width,
+            size=size,
+            x=float(x * 1000),
+            y=float(y * 1000),
+            physics=True,
+        )
+
+    for u, v in graph.edges():
+        net.add_edge(str(u), str(v), color=edge_color, width=1.2, smooth={"type": "continuous"})
+
+    options = {
+        "nodes": {
+            "shape": "dot",
+            "font": {"size": 14, "color": "#111827"},
+        },
+        "edges": {
+            "color": {"color": edge_color},
+            "smooth": {"type": "continuous"},
+        },
+        "physics": {
+            "enabled": True,
+            "solver": "forceAtlas2Based",
+            "forceAtlas2Based": {
+                "gravitationalConstant": -60,
+                "centralGravity": 0.015,
+                "springLength": 220,
+                "springConstant": 0.06,
+                "damping": 0.4,
+                "avoidOverlap": 0.5,
+            },
+            "stabilization": {"iterations": 300},
+        },
+        "interaction": {
+            "hover": True,
+            "tooltipDelay": 120,
+            "hideEdgesOnDrag": True,
+            "zoomView": True,
+            "dragView": True,
+            "dragNodes": True,
+            "selectConnectedEdges": True,
+            "navigationButtons": True,
+            "keyboard": {"enabled": True},
+        },
+        "layout": {"improvedLayout": True},
+    }
+    net.set_options(json.dumps(options))
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tmp:
+        net.save_graph(tmp.name)
+        tmp_path = tmp.name
+    with open(tmp_path, "r", encoding="utf-8") as f:
+        html = f.read()
+    try:
+        os.remove(tmp_path)
+    except Exception:
+        pass
+    return html
+
+
 # -----------------------------
 # Streamlit UI
 # -----------------------------
@@ -322,6 +494,7 @@ else:
     zc_gamma_src = zc_up
 
 algorithm = st.selectbox("MWVC algorithm", ["Exact (PuLP)", "Local 2-Approx Heuristic"], index=0)
+viz_engine = st.selectbox("Interactive graph engine", ["PyVis (recommended)", "Plotly"], index=0)
 run = st.button("Run")
 
 if run:
@@ -368,7 +541,28 @@ if run:
             cover_df = pd.DataFrame({"Node": cover})
             st.dataframe(cover_df)
 
-            with st.expander("Show graph (matplotlib)", expanded=True):
+            with st.expander("Interactive graph", expanded=True):
+                if viz_engine == "PyVis (recommended)":
+                    legend_html = (
+                        "<div style='display:flex;gap:18px;align-items:center;margin-bottom:8px;'>"
+                        "<div style='display:flex;align-items:center;gap:8px;'>"
+                        "<span style='display:inline-block;width:12px;height:12px;border-radius:50%;background:#d62728;border:2px solid #b71c1c;'></span>"
+                        "<span style='font-size:14px;'>Covered</span>"
+                        "</div>"
+                        "<div style='display:flex;align-items:center;gap:8px;'>"
+                        "<span style='display:inline-block;width:12px;height:12px;border-radius:50%;background:#1f77b4;border:2px solid #0b3c5d;'></span>"
+                        "<span style='font-size:14px;'>Uncovered</span>"
+                        "</div>"
+                        "</div>"
+                    )
+                    st.markdown(legend_html, unsafe_allow_html=True)
+                    html = draw_graph_pyvis(G, cover, node_costs)
+                    components.html(html, height=720, scrolling=True)
+                else:
+                    fig_int = draw_graph_plotly(G, cover, node_costs)
+                    st.plotly_chart(fig_int, use_container_width=True, config={"displayModeBar": True})
+
+            with st.expander("Static graph (matplotlib)", expanded=False):
                 fig = draw_graph_matplotlib(G, cover, node_costs)
                 st.pyplot(fig, clear_figure=True)
 

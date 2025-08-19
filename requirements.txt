@@ -6,3 +6,5 @@ scipy
 pandas
 openpyxl
 streamlit
+pyvis
+plotly
