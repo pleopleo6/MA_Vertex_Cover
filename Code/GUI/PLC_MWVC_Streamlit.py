@@ -10,7 +10,7 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import tempfile
-from pyvis.network import Network
+from pyvis.network import Network   
 import streamlit.components.v1 as components
 import json
 
